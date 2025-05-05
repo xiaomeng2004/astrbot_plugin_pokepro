@@ -24,7 +24,7 @@ ResponseOption = namedtuple("ResponseOption", ["handler", "args"])
     "戳一戳专业版",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.1",
+    "1.0.2",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
@@ -149,6 +149,7 @@ class PokeproPlugin(Star):
                 selected.handler(event, **selected.args)
         except Exception as e:
             logger.error(f"执行戳一戳响应失败: {e}", exc_info=True)
+        event.stop_event()
 
     # ========== 响应函数 ==========
     async def poke_respond(self, event: AiocqhttpMessageEvent):
@@ -299,3 +300,4 @@ class PokeproPlugin(Star):
                         await asyncio.sleep(self.poke_interval)
         except Exception as e:
             logger.error(f"发送戳一戳失败：{e}")
+        event.stop_event()
