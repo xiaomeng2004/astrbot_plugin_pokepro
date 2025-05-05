@@ -21,7 +21,7 @@
         "description": "llm提示模板",
         "type": "string",
         "hint": "触发llm回复时，llm的提示模板",
-        "default": "{username} 戳了你一下，请你回复一下，回复要确保符合人设，考虑上下文，确保通顺不突兀"
+        "default": "{username} 戳了你一下，请你回复一下，回复要确保符合人设，并夹带生气甚至愤怒的情绪，考虑上下文，确保通顺不突兀"
     },
     "face_ids_str": {
             "description": "表情ID",
