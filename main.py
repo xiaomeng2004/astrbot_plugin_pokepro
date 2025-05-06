@@ -24,7 +24,7 @@ ResponseOption = namedtuple("ResponseOption", ["handler", "args"])
     "戳一戳专业版",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.2",
+    "1.0.3",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
@@ -149,7 +149,6 @@ class PokeproPlugin(Star):
                 selected.handler(event, **selected.args)
         except Exception as e:
             logger.error(f"执行戳一戳响应失败: {e}", exc_info=True)
-        event.stop_event()
 
     # ========== 响应函数 ==========
     async def poke_respond(self, event: AiocqhttpMessageEvent):
@@ -187,13 +186,13 @@ class PokeproPlugin(Star):
                 system_prompt=personality_prompt,
                 contexts=contexts,
             )
+            await event.send(MessageChain(chain=[Plain(llm_response.completion_text)]))  # type: ignore
+            event.stop_event()
 
         except Exception as e:
             logger.error(f"LLM 调用失败：{e}")
             return
 
-        await event.send(MessageChain(chain=[Plain(llm_response.completion_text)]))  # type: ignore
-        event.stop_event()
 
     async def face_respond(self, event: AiocqhttpMessageEvent):
         """回复emojji(QQ表情)"""
@@ -227,10 +226,10 @@ class PokeproPlugin(Star):
 
         except Exception:
             reply_list = self.ban_fail_responses
-
-        reply = await self.format_reply(event, random.choice(reply_list))
-        await event.send(MessageChain(chain=[Plain(reply)]))  # type: ignore
-        event.stop_event()
+        finally:
+            reply = await self.format_reply(event, random.choice(reply_list))
+            await event.send(MessageChain(chain=[Plain(reply)]))  # type: ignore
+            event.stop_event()
 
     async def box_respond(self, event: AiocqhttpMessageEvent):
         """开盒"""
