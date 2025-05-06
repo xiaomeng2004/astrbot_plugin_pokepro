@@ -24,7 +24,7 @@ ResponseOption = namedtuple("ResponseOption", ["handler", "args"])
     "戳一戳专业版",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.3",
+    "1.0.4",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
@@ -52,6 +52,9 @@ class PokeproPlugin(Star):
             len(self.response_handlers) - len(weight_list)
         )
         self.poke_max_times: int = config.get("poke_max_times", 5)
+
+        # 跟戳概率
+        self.follow_poke_th: float = config.get("follow_poke_th", 0.05)
 
         # 表情ID列表
         face_ids_str = config.get("face_ids_str", "")
@@ -111,23 +114,33 @@ class PokeproPlugin(Star):
         else:
             raise ValueError("return_type 必须是 'str' 或 'int'")
 
-    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_poke(self, event: AiocqhttpMessageEvent):
         """监听并响应戳一戳事件"""
-        # 检查事件结构是否符合预期
+        raw_message = getattr(event.message_obj, "raw_message", None)
+
         if (
-            not hasattr(event, "message_obj")
-            or not hasattr(event.message_obj, "message")
-            or not event.message_obj.message
+            not raw_message
+            or not isinstance(raw_message, dict)
+            or raw_message.get("sub_type") != "poke"
         ):
             return
 
-        # 确保所有消息组件都是 Poke 类型且目标是自己
-        for comp in event.message_obj.message:
-            if not isinstance(comp, Poke):
-                return
-            if str(comp.qq) != event.get_self_id():
-                return
+        target_id: int = raw_message.get("target_id", 0)
+        user_id: int = raw_message.get("user_id", 0)
+        self_id: int = raw_message.get("self_id", 0)
+        group_id: int = raw_message.get("group_id", 0)
+
+        # 过滤与自身无关的戳
+        if target_id != self_id:
+            # 跟戳机制
+            if (
+                group_id
+                and user_id != self_id
+                and random.random() < self.follow_poke_th
+            ):
+                await event.bot.group_poke(group_id=int(group_id), user_id=target_id)
+            return
 
         # 构建响应选项
         response_options = []
@@ -170,8 +183,12 @@ class PokeproPlugin(Star):
         """调用llm回复"""
         try:
             umo = event.unified_msg_origin
-            curr_cid = await self.context.conversation_manager.get_curr_conversation_id(umo)
-            conversation = await self.context.conversation_manager.get_conversation(umo, curr_cid)
+            curr_cid = await self.context.conversation_manager.get_curr_conversation_id(
+                umo
+            )
+            conversation = await self.context.conversation_manager.get_conversation(
+                umo, curr_cid
+            )
             contexts = json.loads(conversation.history)
 
             personality = self.context.get_using_provider().curr_personality
@@ -192,7 +209,6 @@ class PokeproPlugin(Star):
         except Exception as e:
             logger.error(f"LLM 调用失败：{e}")
             return
-
 
     async def face_respond(self, event: AiocqhttpMessageEvent):
         """回复emojji(QQ表情)"""
@@ -278,7 +294,7 @@ class PokeproPlugin(Star):
             for seg in event.get_messages()
             if isinstance(seg, At) and str(seg.qq) != event.get_self_id()
         ]
-        if event.message_str == "戳我":
+        if "戳我" in event.message_str.split():
             target_ids.append(event.get_sender_id())
         if not target_ids:
             return
