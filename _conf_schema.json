@@ -2,7 +2,7 @@
     "weight_str": {
         "description": "各回复事件的触发权重",
         "type": "string",
-        "hint": "反戳：LLM：emoji：图库：禁言：meme：api：开盒，与回复事件一一对应，请用冒号隔开各权重，数字越大触发对应回复事件的概率越大，权重数量必须与回复事件数量一致，不一致则缺失项默认为1，注意：meme需装memelite插件（rust版和python版都行）才能起效，'开盒'需装box插件才能起效，'api'需装apis插件才能起效",
+        "hint": "反戳：LLM：face：图库：禁言：meme：api：开盒，与回复事件一一对应，请用冒号隔开各权重，数字越大触发对应回复事件的概率越大，权重数量必须与回复事件数量一致，不一致则缺失项默认为1，注意：meme需装memelite插件（rust版和python版都行）才能起效，'开盒'需装box插件才能起效，'api'需装apis插件才能起效",
         "default": "1：5：2：7：1：2：2：1"
     },
     "follow_poke_th":{
@@ -23,6 +23,12 @@
         "hint": "发送戳一戳时，每次戳的时间间隔，单位为秒",
         "default": 0
     }, 
+    "cooldown_seconds":{
+        "description": "戳一戳冷却时间",
+        "type": "int",
+        "hint": "每个用户戳bot的冷却时间，单位为秒，冷却时间内不检测该用户的戳一戳，可有效防止挂逼连戳",
+        "default": 10
+    },
     "llm_prompt_template": {
         "description": "llm提示模板",
         "type": "text",

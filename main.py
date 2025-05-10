@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import random
 import re
+import time
 from astrbot.api.event import filter
 from astrbot.api.star import Context, Star, register
 from astrbot.api.message_components import Plain, Image, At, Face, Poke
@@ -20,15 +21,14 @@ from typing import List, Union
     "astrbot_plugin_pokepro",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.5",
+    "1.0.6",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-
-        # 获取所有 _respond 方法（反戳：LLM：emoji：图库：禁言：meme：api：开盒）
+        # 获取所有 _respond 方法（反戳：LLM：face：图库：禁言：meme：api：开盒）
         self.response_handlers = [
             self.poke_respond,
             self.llm_respond,
@@ -43,12 +43,16 @@ class PokeproPlugin(Star):
         # 初始化权重列表
         weight_str = config.get("weight_str", "")
         weight_list: list[int] = self._string_to_list(weight_str, "int")  # type: ignore
-
-        # 如果权重数量不足，默认填充为 1
         self.weights: list[int] = weight_list + [1] * (
             len(self.response_handlers) - len(weight_list)
         )
+        # 连戳最大次数
         self.poke_max_times: int = config.get("poke_max_times", 5)
+
+        # 冷却时间
+        self.cooldown_seconds = config.get("cooldown_seconds", 10)
+        # 记录每个 user_id 的最后触发时间
+        self.last_trigger_time = {}
 
         # 跟戳概率
         self.follow_poke_th: float = config.get("follow_poke_th", 0.05)
@@ -67,7 +71,8 @@ class PokeproPlugin(Star):
         self.meme_cmds_str = config.get("meme_cmds_str", "")
         self.meme_cmds: list[str] = self._string_to_list(self.meme_cmds_str, "str")  # type: ignore
 
-        self.api_cmds_str = config.get("meme_cmds_str", "")
+        # api命令列表
+        self.api_cmds_str = config.get("api_cmds_str", "")
         self.api_cmds: list[str] = self._string_to_list(self.api_cmds_str, "str")  # type: ignore
 
         # 被戳llm提示模板
@@ -134,6 +139,13 @@ class PokeproPlugin(Star):
         self_id: int = raw_message.get("self_id", 0)
         group_id: int = raw_message.get("group_id", 0)
 
+        # 冷却机制
+        current_time = time.monotonic()
+        last_time = self.last_trigger_time.get(user_id, 0)
+        if current_time - last_time < self.cooldown_seconds:
+            return
+        self.last_trigger_time[user_id] = current_time
+
         # 过滤与自身无关的戳
         if target_id != self_id:
             # 跟戳机制
@@ -167,7 +179,7 @@ class PokeproPlugin(Star):
                 await asyncio.sleep(self.poke_interval)
         else:
             for _ in range(random.randint(1, self.poke_max_times)):
-                await client.poke(user_id=int(send_id))
+                await client.friend_poke(user_id=int(send_id))
                 await asyncio.sleep(self.poke_interval)
         event.stop_event()
 
