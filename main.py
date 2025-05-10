@@ -5,7 +5,7 @@ import random
 import re
 from astrbot.api.event import filter
 from astrbot.api.star import Context, Star, register
-from astrbot.api.message_components import Poke, Plain, Image, At, Face
+from astrbot.api.message_components import Plain, Image, At, Face, Poke
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
@@ -14,17 +14,13 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 from astrbot.api import logger
 
 from typing import List, Union
-from collections import namedtuple
-
-# 定义响应选项结构体
-ResponseOption = namedtuple("ResponseOption", ["handler", "args"])
 
 
 @register(
-    "戳一戳专业版",
+    "astrbot_plugin_pokepro",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.4",
+    "1.0.5",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
@@ -32,16 +28,17 @@ class PokeproPlugin(Star):
         super().__init__(context)
         self.config = config
 
-        # 获取所有 _respond 方法
-        self.response_handlers = {
-            "poke_respond": self.poke_respond,
-            "llm_respond": self.llm_respond,
-            "face_respond": self.face_respond,
-            "gallery_respond": self.gallery_respond,
-            "meme_respond": self.meme_respond,
-            "ban_respond": self.ban_respond,
-            "box_respond": self.box_respond,
-        }
+        # 获取所有 _respond 方法（反戳：LLM：emoji：图库：禁言：meme：api：开盒）
+        self.response_handlers = [
+            self.poke_respond,
+            self.llm_respond,
+            self.face_respond,
+            self.gallery_respond,
+            self.ban_respond,
+            self.meme_respond,
+            self.api_respond,
+            self.box_respond,
+        ]
 
         # 初始化权重列表
         weight_str = config.get("weight_str", "")
@@ -70,14 +67,20 @@ class PokeproPlugin(Star):
         self.meme_cmds_str = config.get("meme_cmds_str", "")
         self.meme_cmds: list[str] = self._string_to_list(self.meme_cmds_str, "str")  # type: ignore
 
-        # 禁言回复文本列表
-        self.ban_responses: list[str] = config.get("ban_responses", [])
+        self.api_cmds_str = config.get("meme_cmds_str", "")
+        self.api_cmds: list[str] = self._string_to_list(self.api_cmds_str, "str")  # type: ignore
 
-        # 禁言失败回复文本列表
-        self.ban_fail_responses: list[str] = config.get("ban_fail_responses", [])
+        # 被戳llm提示模板
+        self.llm_prompt_template = config.get("llm_prompt_template", "?")
+        # 禁言提示模板
+        self.ban_prompt_template = config.get("ban_prompt_template", "?")
+        # 禁言失败提示模板
+        self.ban_fail_prompt_template = config.get("ban_fail_prompt_template", "?")
 
-        # llm提示模板
-        self.llm_prompt_template = config.get("llm_prompt_template", "")
+        # 随机禁言时间范围
+        ban_time_range_str = config.get("ban_time_range_str", "30~300")
+        self.ban_time_range = tuple(map(int, ban_time_range_str.split("~")))
+
 
     def _string_to_list(
         self,
@@ -121,8 +124,8 @@ class PokeproPlugin(Star):
 
         if (
             not raw_message
-            or not isinstance(raw_message, dict)
-            or raw_message.get("sub_type") != "poke"
+            or not event.message_obj.message
+            or not isinstance(event.message_obj.message[0], Poke)
         ):
             return
 
@@ -142,24 +145,13 @@ class PokeproPlugin(Star):
                 await event.bot.group_poke(group_id=int(group_id), user_id=target_id)
             return
 
-        # 构建响应选项
-        response_options = []
-        for handler_name, handler_func in self.response_handlers.items():
-            # 可根据 handler_name 设置特定参数，这里统一使用空字典
-            response_options.append(ResponseOption(handler_func, {}))
-
         # 随机选择一个响应函数
-        selected: ResponseOption = random.choices(
-            population=response_options, weights=self.weights, k=1
+        selected_handler = random.choices(
+            population=self.response_handlers, weights=self.weights, k=1
         )[0]
 
-        logger.debug(f"Selected poke response function: {selected.handler.__name__}")
-
         try:
-            if asyncio.iscoroutinefunction(selected.handler):
-                await selected.handler(event, **selected.args)
-            else:
-                selected.handler(event, **selected.args)
+            await selected_handler(event)
         except Exception as e:
             logger.error(f"执行戳一戳响应失败: {e}", exc_info=True)
 
@@ -181,34 +173,9 @@ class PokeproPlugin(Star):
 
     async def llm_respond(self, event: AiocqhttpMessageEvent):
         """调用llm回复"""
-        try:
-            umo = event.unified_msg_origin
-            curr_cid = await self.context.conversation_manager.get_curr_conversation_id(
-                umo
-            )
-            conversation = await self.context.conversation_manager.get_conversation(
-                umo, curr_cid
-            )
-            contexts = json.loads(conversation.history)
-
-            personality = self.context.get_using_provider().curr_personality
-            personality_prompt = personality["prompt"] if personality else ""
-
-            format_prompt = self.llm_prompt_template.format(
-                username=event.get_sender_name()
-            )
-
-            llm_response = await self.context.get_using_provider().text_chat(
-                prompt=format_prompt,
-                system_prompt=personality_prompt,
-                contexts=contexts,
-            )
-            await event.send(MessageChain(chain=[Plain(llm_response.completion_text)]))  # type: ignore
-            event.stop_event()
-
-        except Exception as e:
-            logger.error(f"LLM 调用失败：{e}")
-            return
+        text = await self.get_llm_respond(event, self.llm_prompt_template)
+        await event.send(MessageChain(chain=[Plain(text)]))  # type: ignore
+        event.stop_event()
 
     async def face_respond(self, event: AiocqhttpMessageEvent):
         """回复emojji(QQ表情)"""
@@ -226,26 +193,30 @@ class PokeproPlugin(Star):
         await event.send(MessageChain(chain=[Image(selected_file)]))  # type: ignore
         event.stop_event()
 
-    async def meme_respond(self, event: AiocqhttpMessageEvent):
-        """回复合成的meme"""
-        await self.send_cmd(event, random.choice(self.meme_cmds))
-
     async def ban_respond(self, event: AiocqhttpMessageEvent):
         """禁言"""
         try:
             await event.bot.set_group_ban(
                 group_id=int(event.get_group_id()),
                 user_id=int(event.get_sender_id()),
-                duration=random.randint(30, 120),
+                duration=random.randint(*self.ban_time_range),
             )
-            reply_list = self.ban_responses
+            prompt_template = self.ban_prompt_template
 
         except Exception:
-            reply_list = self.ban_fail_responses
+            prompt_template = self.ban_fail_prompt_template
         finally:
-            reply = await self.format_reply(event, random.choice(reply_list))
-            await event.send(MessageChain(chain=[Plain(reply)]))  # type: ignore
+            text = await self.get_llm_respond(event, prompt_template)
+            await event.send(MessageChain(chain=[Plain(text)]))  # type: ignore
             event.stop_event()
+
+    async def meme_respond(self, event: AiocqhttpMessageEvent):
+        """回复合成的meme"""
+        await self.send_cmd(event, random.choice(self.meme_cmds))
+
+    async def api_respond(self, event: AiocqhttpMessageEvent):
+        "调用api"
+        await self.send_cmd(event, random.choice(self.api_cmds))
 
     async def box_respond(self, event: AiocqhttpMessageEvent):
         """开盒"""
@@ -260,6 +231,7 @@ class PokeproPlugin(Star):
         obj_msg.append(Plain(command))
         event.message_obj.message_str = command
         event.message_str = command
+        print(event.message_obj)
         self.context.get_event_queue().put_nowait(event)
         event.should_call_llm(True)
 
@@ -285,6 +257,36 @@ class PokeproPlugin(Star):
             botname = bot_info.get("nickname", "我")
 
         return template.format(botname=botname, username=username)
+
+    async def get_llm_respond(
+        self, event: AiocqhttpMessageEvent, prompt_template: str
+    ) -> str | None:
+        """调用llm回复"""
+        try:
+            umo = event.unified_msg_origin
+            curr_cid = await self.context.conversation_manager.get_curr_conversation_id(
+                umo
+            )
+            conversation = await self.context.conversation_manager.get_conversation(
+                umo, curr_cid
+            )
+            contexts = json.loads(conversation.history)
+
+            personality = self.context.get_using_provider().curr_personality
+            personality_prompt = personality["prompt"] if personality else ""
+
+            format_prompt = prompt_template.format(username=event.get_sender_name())
+
+            llm_response = await self.context.get_using_provider().text_chat(
+                prompt=format_prompt,
+                system_prompt=personality_prompt,
+                contexts=contexts,
+            )
+            return llm_response.completion_text
+
+        except Exception as e:
+            logger.error(f"LLM 调用失败：{e}")
+            return None
 
     @filter.command("戳", alias={"戳我"})
     async def poke_handle(self, event: AiocqhttpMessageEvent, times: int = 1):
