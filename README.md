@@ -54,5 +54,6 @@ git clone https://github.com/Zhalslar/astrbot_plugin_pokepro
 
 - 要使开盒事件生效，得先安装好[开盒插件](https://github.com/Zhalslar/astrbot_plugin_box)
 - 要使meme事件生效，得先安装好[表情包插件](https://github.com/Zhalslar/astrbot_plugin_memelite)或者[表情包插件Rust版](https://github.com/Zhalslar/astrbot_plugin_memelite_rs)
+- 要使api事件生效，得先安装好[api聚合插件](https://github.com/Zhalslar/astrbot_plugin_apis)
 - 同时推荐用[图库管理器](https://github.com/Zhalslar/astrbot_plugin_gallery)动态管理戳一戳图库
 - 想第一时间得到反馈的可以来作者的插件反馈群（QQ群）：460973561（不点star不给进）
