@@ -21,7 +21,7 @@ from typing import List, Union
     "astrbot_plugin_pokepro",
     "Zhalslar",
     "【更专业的戳一戳插件】支持触发（反戳：文本：emoji：图库：meme：禁言：开盒：戳@某人）",
-    "1.0.6",
+    "1.0.7",
     "https://github.com/Zhalslar/astrbot_plugin_pokepro",
 )
 class PokeproPlugin(Star):
@@ -85,7 +85,6 @@ class PokeproPlugin(Star):
         # 随机禁言时间范围
         ban_time_range_str = config.get("ban_time_range_str", "30~300")
         self.ban_time_range = tuple(map(int, ban_time_range_str.split("~")))
-
 
     def _string_to_list(
         self,
@@ -243,7 +242,6 @@ class PokeproPlugin(Star):
         obj_msg.append(Plain(command))
         event.message_obj.message_str = command
         event.message_str = command
-        print(event.message_obj)
         self.context.get_event_queue().put_nowait(event)
         event.should_call_llm(True)
 
@@ -301,7 +299,7 @@ class PokeproPlugin(Star):
             return None
 
     @filter.command("戳", alias={"戳我"})
-    async def poke_handle(self, event: AiocqhttpMessageEvent, times: int = 1):
+    async def poke_handle(self, event: AiocqhttpMessageEvent):
         """戳@xxx / 戳我"""
         target_ids = [
             str(seg.qq)
@@ -312,7 +310,12 @@ class PokeproPlugin(Star):
             target_ids.append(event.get_sender_id())
         if not target_ids:
             return
-
+        parsed_msg = event.message_str.split()
+        times = (
+            int(parsed_msg[-1])
+            if parsed_msg[-1].isdigit()
+            else random.randint(1, self.poke_max_times)
+        )
         group_id = event.get_group_id()
 
         try:
