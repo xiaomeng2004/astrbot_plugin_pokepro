@@ -122,10 +122,19 @@ class PokeproPlugin(Star):
             raise ValueError("return_type 必须是 'str' 或 'int'")
 
     async def _send_cmd(self, event: AiocqhttpMessageEvent, command: str):
-        """发送命令"""
+        """发送命令，附带完整用户信息"""
         obj_msg = event.message_obj.message
         obj_msg.clear()
-        obj_msg.extend([At(qq=event.get_self_id()), Plain(command)])
+        
+        # 构建消息链，包含@bot + 命令 + @用户
+        message_chain = [At(qq=event.get_self_id()), Plain(f"{command} ")]
+        
+        # 添加发送者的@信息，让meme插件能够获取完整用户信息
+        sender_id = event.get_sender_id()
+        if sender_id and sender_id != event.get_self_id():
+            message_chain.append(At(qq=sender_id))
+            
+        obj_msg.extend(message_chain)
         event.message_obj.message_str = command
         event.message_str = command
         self.context.get_event_queue().put_nowait(event)
