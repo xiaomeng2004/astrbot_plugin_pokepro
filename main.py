@@ -272,14 +272,17 @@ class PokeproPlugin(Star):
     async def meme_respond(self, event: AiocqhttpMessageEvent):
         """回复合成的meme"""
         await self._send_cmd(event, random.choice(self.meme_cmds))
+        event.stop_event()
 
     async def api_respond(self, event: AiocqhttpMessageEvent):
         "调用api"
         await self._send_cmd(event, random.choice(self.api_cmds))
+        event.stop_event()
 
     async def box_respond(self, event: AiocqhttpMessageEvent):
         """开盒"""
         await self._send_cmd(event, "盒")
+        event.stop_event()
 
     @filter.command("戳", alias={"戳我"})
     async def poke_handle(self, event: AiocqhttpMessageEvent):
