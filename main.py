@@ -122,23 +122,40 @@ class PokeproPlugin(Star):
             raise ValueError("return_type 必须是 'str' 或 'int'")
 
     async def _send_cmd(self, event: AiocqhttpMessageEvent, command: str):
-        """发送命令，附带完整用户信息"""
-        obj_msg = event.message_obj.message
-        obj_msg.clear()
-        
-        # 构建消息链，包含@bot + 命令 + @用户
-        message_chain = [At(qq=event.get_self_id()), Plain(f"{command} ")]
-        
-        # 添加发送者的@信息，让meme插件能够获取完整用户信息
-        sender_id = event.get_sender_id()
-        if sender_id and sender_id != event.get_self_id():
-            message_chain.append(At(qq=sender_id))
+        """发送命令，创建新的简化事件来触发其他插件"""
+        try:
+            # 使用浅拷贝创建新事件，然后只替换必要的部分
+            import copy
             
-        obj_msg.extend(message_chain)
-        event.message_obj.message_str = command
-        event.message_str = command
-        self.context.get_event_queue().put_nowait(event)
-        event.should_call_llm(True)
+            # 先尝试浅拷贝
+            try:
+                new_event = copy.copy(event)
+                # 为新事件创建新的消息对象，避免共享引用
+                new_event.message_obj = copy.copy(event.message_obj)
+                new_event.message_obj.message = []
+            except Exception:
+                # 如果浅拷贝也失败，则手动创建最小化的事件处理
+                logger.warning("无法复制事件对象，跳过命令发送")
+                return
+            
+            # 构建新的命令消息链
+            message_chain = [At(qq=event.get_self_id()), Plain(f"{command} ")]
+            
+            # 添加发送者的@信息
+            sender_id = event.get_sender_id()
+            if sender_id and sender_id != event.get_self_id():
+                message_chain.append(At(qq=sender_id))
+            
+            # 设置新事件的消息内容
+            new_event.message_obj.message.extend(message_chain)
+            new_event.message_obj.message_str = command
+            new_event.message_str = command
+            
+            # 将新事件放入队列
+            self.context.get_event_queue().put_nowait(new_event)
+            
+        except Exception as e:
+            logger.error(f"发送命令失败: {e}", exc_info=True)
 
     async def _get_llm_respond(
         self, event: AiocqhttpMessageEvent, prompt_template: str
@@ -271,12 +288,20 @@ class PokeproPlugin(Star):
 
     async def meme_respond(self, event: AiocqhttpMessageEvent):
         """回复合成的meme"""
-        await self._send_cmd(event, random.choice(self.meme_cmds))
+        if self.meme_cmds:
+            await self._send_cmd(event, random.choice(self.meme_cmds))
+        else:
+            # 如果没有配置meme命令，发送提示
+            await event.send(MessageChain(chain=[Plain("meme命令列表为空，请检查配置")]))
         event.stop_event()
 
     async def api_respond(self, event: AiocqhttpMessageEvent):
         "调用api"
-        await self._send_cmd(event, random.choice(self.api_cmds))
+        if self.api_cmds:
+            await self._send_cmd(event, random.choice(self.api_cmds))
+        else:
+            # 如果没有配置api命令，发送提示
+            await event.send(MessageChain(chain=[Plain("api命令列表为空，请检查配置")]))
         event.stop_event()
 
     async def box_respond(self, event: AiocqhttpMessageEvent):
